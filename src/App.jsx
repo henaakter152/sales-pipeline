@@ -89,22 +89,29 @@ export default function App() {
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    (async () => {
+    const saved = localStorage.getItem('sales_pipeline_data');
+    if (saved) {
       try {
-        const base = window.location.origin;
-        const [d, c, a] = await Promise.all([
-          fetch(base + '/api/deals').then(r => r.json()),
-          fetch(base + '/api/contacts').then(r => r.json()),
-          fetch(base + '/api/activities').then(r => r.json()),
-        ]);
-        if (d && d.length) { setDeals(d); setContacts(c); setActivities(a); setLoading(false); return; }
+        const data = JSON.parse(saved);
+        setDeals(data.deals || MOCK_DEALS);
+        setContacts(data.contacts || MOCK_CONTACTS);
+        setActivities(data.activities || MOCK_ACTIVITIES);
+        setLoading(false);
+        return;
       } catch (e) {}
-      setDeals(MOCK_DEALS);
-      setContacts(MOCK_CONTACTS);
-      setActivities(MOCK_ACTIVITIES);
-      setLoading(false);
-    })();
+    }
+    setDeals(MOCK_DEALS);
+    setContacts(MOCK_CONTACTS);
+    setActivities(MOCK_ACTIVITIES);
+    setLoading(false);
   }, []);
+
+  // Persist all data to localStorage on change
+  const saveToLocal = React.useCallback(() => {
+    localStorage.setItem('sales_pipeline_data', JSON.stringify({ deals, contacts, activities }));
+  }, [deals, contacts, activities]);
+
+  React.useEffect(() => { if (!loading) saveToLocal(); }, [deals, contacts, activities, loading, saveToLocal]);
 
   const [activeTab, setActiveTab] = useState('overview');
   const [search, setSearch] = useState('');
@@ -186,16 +193,13 @@ export default function App() {
     const prob = { lead: 15, qualified: 40, proposal: 55, negotiation: 70, won: 100, lost: 0 }[newStage] ?? deal.probability;
     setDeals(prev => prev.map(d => d.id === deal.id ? { ...d, stage: newStage, probability: prob } : d));
     setSelectedDeal(sd => sd && sd.id === deal.id ? { ...sd, stage: newStage, probability: prob } : sd);
-    fetch(window.location.origin + '/api/deals/' + deal.id, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stage: newStage, probability: prob })
-    }).catch(() => {});
+
   }
 
   async function deleteDeal(deal) {
     setDeals(prev => prev.filter(d => d.id !== deal.id));
     setSelectedDeal(null);
-    fetch(window.location.origin + '/api/deals/' + deal.id, { method: 'DELETE' }).catch(() => {});
+
   }
 
   async function addDeal(form) {
@@ -217,23 +221,13 @@ export default function App() {
     };
     setDeals(prev => [...prev, row]);
     setShowNewDeal(false);
-    (async () => {
-      const res = await fetch(window.location.origin + '/api/deals', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: row.name, company: row.company, contact: row.contact, amount: row.amount, stage: row.stage, probability: row.probability, owner: row.owner, source: row.source, close_date: row.close_date, notes: row.notes })
-      });
-      const data = await res.json();
-      setDeals(prev => prev.map(d => d.id === nextId ? { ...d, id: data.id } : d));
-    })();
+
   }
 
   async function toggleActivity(act) {
     const newDone = !act.done;
     setActivities(prev => prev.map(a => a.id === act.id ? { ...a, done: newDone } : a));
-    fetch(window.location.origin + '/api/activities/' + act.id, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ done: newDone })
-    }).catch(() => {});
+
   }
 
   const tabs = [
