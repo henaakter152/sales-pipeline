@@ -83,9 +83,28 @@ const ACTIVITY_META = {
 };
 
 export default function App() {
-  const [deals, setDeals] = useState(MOCK_DEALS);
-  const [contacts, setContacts] = useState(MOCK_CONTACTS);
-  const [activities, setActivities] = useState(MOCK_ACTIVITIES);
+  const [deals, setDeals] = React.useState([]);
+  const [contacts, setContacts] = React.useState([]);
+  const [activities, setActivities] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const base = window.location.origin;
+        const [d, c, a] = await Promise.all([
+          fetch(base + '/api/deals').then(r => r.json()),
+          fetch(base + '/api/contacts').then(r => r.json()),
+          fetch(base + '/api/activities').then(r => r.json()),
+        ]);
+        if (d && d.length) { setDeals(d); setContacts(c); setActivities(a); setLoading(false); return; }
+      } catch (e) {}
+      setDeals(MOCK_DEALS);
+      setContacts(MOCK_CONTACTS);
+      setActivities(MOCK_ACTIVITIES);
+      setLoading(false);
+    })();
+  }, []);
 
   const [activeTab, setActiveTab] = useState('overview');
   const [search, setSearch] = useState('');
@@ -163,20 +182,20 @@ export default function App() {
   }, [deals]);
 
   // ---- Actions ----
-  function updateStage(deal, newStage) {
+  async function updateStage(deal, newStage) {
     const prob = { lead: 15, qualified: 40, proposal: 55, negotiation: 70, won: 100, lost: 0 }[newStage] ?? deal.probability;
     setDeals(prev => prev.map(d => d.id === deal.id ? { ...d, stage: newStage, probability: prob } : d));
     setSelectedDeal(sd => sd && sd.id === deal.id ? { ...sd, stage: newStage, probability: prob } : sd);
     // Stage updated locally
   }
 
-  function deleteDeal(deal) {
+  async function deleteDeal(deal) {
     setDeals(prev => prev.filter(d => d.id !== deal.id));
     setSelectedDeal(null);
     // Deal deleted locally
   }
 
-  function addDeal(form) {
+  async function addDeal(form) {
     const nextId = (deals.reduce((m, d) => Math.max(m, Number(d.id) || 0), 0)) + 1;
     const today = new Date().toISOString().slice(0, 10);
     const row = {
@@ -198,7 +217,7 @@ export default function App() {
     // Deal added locally
   }
 
-  function toggleActivity(act) {
+  async function toggleActivity(act) {
     const newDone = !act.done;
     setActivities(prev => prev.map(a => a.id === act.id ? { ...a, done: newDone } : a));
     // Activity toggled locally
@@ -219,7 +238,16 @@ export default function App() {
     { l: 'Win rate',      v: winRate + '%',           sub: `${closedCount} closed`,     i: TrendingUp, c: ACCENT.teal  },
   ];
 
-  return (
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-[#FAFAF8]">
+      <div className="text-center">
+        <div className="animate-spin w-8 h-8 border-2 border-[#B8A9E8] border-t-transparent rounded-full mx-auto mb-3" />
+        <p className="text-sm text-[#9B9B9B]">Loading pipeline...</p>
+      </div>
+    </div>
+  );
+
+    return (
     <div className="min-h-screen bg-[#FAFAF8]">
       {/* Header */}
       <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-[#F0F0F0]">
