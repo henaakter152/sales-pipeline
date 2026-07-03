@@ -10,3 +10,10 @@
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
+  <link rel="manifest" href="/sales-pipeline/manifest.json" />
+  <meta name="theme-color" content="#1A1A1A" />
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sales-pipeline/service-worker.js');
+    }
+  </script>
