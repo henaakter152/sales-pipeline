@@ -1,8 +1,6 @@
-name: Build Android APK
+name: Build APK with Bubblewrap
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -12,116 +10,84 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18
       
-      - name: Build web app
-        run: |
-          npm install
-          npm run build
-
+      - uses: actions/setup-node@v4
+        with: { node-version: 18 }
+      
       - uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-34 build-tools;34.0.0 platforms;android-30 cmake;3.22.1 ndk;26.1.10909125'
+        with: { java-version: '17', distribution: 'temurin' }
+      
+      - name: Install Bubblewrap
+        run: npm install -g @bubblewrap/cli
 
       - name: Generate keystore
         run: |
-          keytool -genkey -v -keystore release.keystore -alias pipeline -keyalg RSA -keysize 2048 -validity 10000 -storepass pipeline123 -keypass pipeline123 -dname "CN=H,OU=H,O=H,L=H,ST=H,C=BD"
+          keytool -genkey -v -keystore release.keystore -alias pipeline \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass pipeline123 -keypass pipeline123 \
+            -dname "CN=SP,OU=D,O=S,L=D,ST=D,C=BD"
 
-      - name: Create Android project
+      - name: Init TWA project (non-interactive)
         run: |
-          mkdir -p twa/app/src/main/java/com/henaakter/salespipeline
-          mkdir -p twa/app/src/main/res/values
-          
-          cat > twa/settings.gradle << 'EOF'
-          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-          rootProject.name = "Pipeline"
-          include ":app"
-          EOF
-
-          cat > twa/build.gradle << 'EOF'
-          plugins { id 'com.android.application' version '8.7.3' apply false }
-          EOF
-
-          cat > twa/gradle.properties << 'EOF'
-          android.useAndroidX=true
-          EOF
-
-          cat > twa/app/build.gradle << 'EOF'
-          plugins { id 'com.android.application' }
-          android {
-            namespace 'com.henaakter.salespipeline'
-            compileSdk 34
-            defaultConfig {
-              applicationId "com.henaakter.salespipeline"
-              minSdk 21
-              targetSdk 34
-              versionCode 1
-              versionName "1.0"
-            }
-            signingConfigs {
-              release {
-                storeFile file('../release.keystore')
-                storePassword 'pipeline123'
-                keyAlias 'pipeline'
-                keyPassword 'pipeline123'
-              }
-            }
-            buildTypes { release { signingConfig signingConfigs.release; minifyEnabled false } }
+          mkdir twa-project
+          cat > twa-project/twa-manifest.json << 'EOF'
+          {
+            "packageId": "com.henaakter.salespipeline",
+            "host": "henaakter152.github.io",
+            "name": "Sales Pipeline CRM",
+            "launcherName": "Pipeline",
+            "display": "standalone",
+            "themeColor": "#1A1A1A",
+            "backgroundColor": "#FAFAF8",
+            "startUrl": "/sales-pipeline/",
+            "iconUrl": "https://henaakter152.github.io/sales-pipeline/icon-512.svg",
+            "maskableIconUrl": "https://henaakter152.github.io/sales-pipeline/icon-512.svg",
+            "splashScreenFadeOutDuration": 300,
+            "navigationColor": "#1A1A1A",
+            "navigationColorDark": "#000000",
+            "orientation": "any",
+            "webManifestUrl": "https://henaakter152.github.io/sales-pipeline/manifest.json",
+            "signingKey": { "path": "../release.keystore", "alias": "pipeline" }
           }
-          dependencies { implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0' }
           EOF
-
-          cat > twa/app/src/main/AndroidManifest.xml << 'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-            <application android:label="Pipeline" android:theme="@android:style/Theme.Translucent.NoTitleBar">
-              <meta-data android:name="asset_statements" android:resource="@string/assetStatements"/>
-              <activity android:name="com.google.androidbrowserhelper.trusted.LauncherActivity" android:exported="true">
-                <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="https://henaakter152.github.io/sales-pipeline/"/>
-                <intent-filter>
-                  <action android:name="android.intent.action.MAIN"/>
-                  <category android:name="android.intent.category.LAUNCHER"/>
-                </intent-filter>
-                <intent-filter android:autoVerify="true">
-                  <action android:name="android.intent.action.VIEW"/>
-                  <category android:name="android.intent.category.DEFAULT"/>
-                  <category android:name="android.intent.category.BROWSABLE"/>
-                  <data android:scheme="https" android:host="henaakter152.github.io" android:pathPrefix="/sales-pipeline/"/>
-                </intent-filter>
-              </activity>
-            </application>
-          </manifest>
-          EOF
-
-          cat > twa/app/src/main/res/values/strings.xml << 'EOF'
-          <resources><string name="assetStatements">[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"https://henaakter152.github.io"}}]</string></resources>
-          EOF
+          
+          # Use expect to auto-answer prompts
+          sudo apt-get update -qq && sudo apt-get install -y -qq expect
+          
+          expect << 'EXPECT'
+          set timeout 120
+          spawn bubblewrap init --manifest=https://henaakter152.github.io/sales-pipeline/manifest.json --directory=twa-project
+          expect "Domain:" { send "\r" }
+          expect "URL path:" { send "\r" }
+          expect "name:" { send "\r" }
+          expect "short name:" { send "\r" }
+          expect "theme color:" { send "\r" }
+          expect "background color:" { send "\r" }
+          expect "display mode:" { send "\r" }
+          expect "orientation:" { send "\r" }
+          expect eof
+          EXPECT
 
       - name: Build APK
-        working-directory: twa
+        working-directory: twa-project
         run: |
-          gradle wrapper --gradle-version 8.5
-          ./gradlew assembleRelease --no-daemon
+          export BUBBLEWRAP_KEYSTORE_PASSWORD=pipeline123
+          export BUBBLEWRAP_KEY_PASSWORD=pipeline123
+          bubblewrap build --skipPwaValidation
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Pipeline-APK
-          path: twa/app/build/outputs/apk/release/*.apk
+          path: |
+            twa-project/app-release-signed.apk
+            twa-project/*.apk
 
-      - name: Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: release-${{ github.run_number }}
-          name: "Release #${{ github.run_number }}"
-          files: twa/app/build/outputs/apk/release/*.apk
+          tag_name: apk-${{ github.run_number }}
+          name: "APK v${{ github.run_number }}"
+          files: twa-project/app-release-signed.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
