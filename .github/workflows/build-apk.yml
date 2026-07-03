@@ -1,0 +1,106 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      
+      - name: Install dependencies & build web
+        run: |
+          npm install
+          npm run build
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0'
+
+      - name: Install Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli
+
+      - name: Generate Android keystore
+        run: |
+          keytool -genkey -v \
+            -keystore android.keystore \
+            -alias pipeline \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass pipeline123 \
+            -keypass pipeline123 \
+            -dname "CN=Hena Akter, OU=Dev, O=SalesPipeline, L=Dhaka, ST=Dhaka, C=BD"
+
+      - name: Initialize Bubblewrap project
+        run: |
+          bubblewrap init \
+            --manifest="https://henaakter152.github.io/sales-pipeline/manifest.json" \
+            --directory=./android
+
+      - name: Configure TWA
+        run: |
+          cat > ./android/twa-manifest.json << 'TWAEND'
+          {
+            "packageId": "com.henaakter.salespipeline",
+            "host": "henaakter152.github.io",
+            "name": "Sales Pipeline CRM",
+            "launcherName": "Pipeline",
+            "display": "standalone",
+            "themeColor": "#1A1A1A",
+            "backgroundColor": "#FAFAF8",
+            "startUrl": "/sales-pipeline/",
+            "iconUrl": "https://henaakter152.github.io/sales-pipeline/icon-512.svg",
+            "splashScreenFadeOutDuration": 300,
+            "signingKey": {
+              "path": "../android.keystore",
+              "alias": "pipeline"
+            }
+          }
+          TWAEND
+
+      - name: Build APK
+        run: |
+          cd android
+          bubblewrap build
+          cp app/build/outputs/apk/release/app-release-unsigned.apk ../sales-pipeline.apk
+
+      - name: Sign APK
+        run: |
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks android.keystore \
+            --ks-pass pass:pipeline123 \
+            --ks-key-alias pipeline \
+            --key-pass pass:pipeline123 \
+            --out sales-pipeline-signed.apk \
+            sales-pipeline.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sales-pipeline-apk
+          path: sales-pipeline-signed.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: "APK Build #${{ github.run_number }}"
+          files: sales-pipeline-signed.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
