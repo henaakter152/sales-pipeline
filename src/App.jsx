@@ -82,7 +82,43 @@ const ACTIVITY_META = {
   task:    { color: ACCENT.coral, text: '#DC2626', icon: ListTodo },
 };
 
+function LoginScreen({ onLogin }) {
+  const [pass, setPass] = useState('');
+  const [err, setErr] = useState(false);
+  const REAL_PASS = 'sp2026';
+  const go = () => {
+    if (pass === REAL_PASS) { localStorage.setItem('sp_auth', '1'); onLogin(); }
+    else setErr(true);
+  };
+  return (
+    <div style={{minHeight:'100vh',background:'#1A1A1A',display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div style={{textAlign:'center',color:'#fff'}}>
+        <div style={{fontSize:48,marginBottom:8}}>🔒</div>
+        <h2 style={{marginBottom:24,fontWeight:600}}>Sales Pipeline</h2>
+        <input type="password" placeholder="Enter password" value={pass} onChange={e=>{setPass(e.target.value);setErr(false)}}
+          onKeyDown={e=>e.key==='Enter'&&go()}
+          style={{padding:'12px 16px',borderRadius:10,border:'none',fontSize:16,width:240,textAlign:'center',outline:'none'}} />
+        <br/>
+        <button onClick={go} style={{marginTop:16,padding:'10px 40px',borderRadius:10,border:'none',background:'#B8A9E8',color:'#1A1A1A',fontSize:16,fontWeight:600,cursor:'pointer'}}>
+          Unlock
+        </button>
+        {err && <p style={{color:'#FF6B6B',marginTop:12}}>Wrong password!</p>}
+      </div>
+    </div>
+  );
+}
+
+function RealApp() {
+  return <AppContent />;
+}
+
 export default function App() {
+  const [authed, setAuthed] = useState(() => localStorage.getItem('sp_auth') === '1');
+  if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />;
+  return <AppContent />;
+}
+
+function AppContent() {
   const [deals, setDeals] = React.useState([]);
   const [contacts, setContacts] = React.useState([]);
   const [activities, setActivities] = React.useState([]);
