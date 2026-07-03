@@ -186,13 +186,16 @@ export default function App() {
     const prob = { lead: 15, qualified: 40, proposal: 55, negotiation: 70, won: 100, lost: 0 }[newStage] ?? deal.probability;
     setDeals(prev => prev.map(d => d.id === deal.id ? { ...d, stage: newStage, probability: prob } : d));
     setSelectedDeal(sd => sd && sd.id === deal.id ? { ...sd, stage: newStage, probability: prob } : sd);
-    // Stage updated locally
+    fetch(window.location.origin + '/api/deals/' + deal.id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage: newStage, probability: prob })
+    }).catch(() => {});
   }
 
   async function deleteDeal(deal) {
     setDeals(prev => prev.filter(d => d.id !== deal.id));
     setSelectedDeal(null);
-    // Deal deleted locally
+    fetch(window.location.origin + '/api/deals/' + deal.id, { method: 'DELETE' }).catch(() => {});
   }
 
   async function addDeal(form) {
@@ -214,13 +217,23 @@ export default function App() {
     };
     setDeals(prev => [...prev, row]);
     setShowNewDeal(false);
-    // Deal added locally
+    (async () => {
+      const res = await fetch(window.location.origin + '/api/deals', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: row.name, company: row.company, contact: row.contact, amount: row.amount, stage: row.stage, probability: row.probability, owner: row.owner, source: row.source, close_date: row.close_date, notes: row.notes })
+      });
+      const data = await res.json();
+      setDeals(prev => prev.map(d => d.id === nextId ? { ...d, id: data.id } : d));
+    })();
   }
 
   async function toggleActivity(act) {
     const newDone = !act.done;
     setActivities(prev => prev.map(a => a.id === act.id ? { ...a, done: newDone } : a));
-    // Activity toggled locally
+    fetch(window.location.origin + '/api/activities/' + act.id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ done: newDone })
+    }).catch(() => {});
   }
 
   const tabs = [
