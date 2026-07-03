@@ -8,14 +8,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      
       - uses: actions/setup-node@v4
         with:
           node-version: 18
-
+      
       - name: Build web app
         run: |
           npm install
@@ -26,38 +26,29 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-34 build-tools;34.0.0'
+          packages: 'platforms;android-34 build-tools;34.0.0 platforms;android-30 cmake;3.22.1 ndk;26.1.10909125'
 
       - name: Generate keystore
         run: |
-          keytool -genkey -v \
-            -keystore release.keystore \
-            -alias pipeline \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass pipeline123 \
-            -keypass pipeline123 \
-            -dname "CN=A, OU=A, O=A, L=A, S=A, C=BD"
+          keytool -genkey -v -keystore release.keystore -alias pipeline -keyalg RSA -keysize 2048 -validity 10000 -storepass pipeline123 -keypass pipeline123 -dname "CN=H,OU=H,O=H,L=H,ST=H,C=BD"
 
-      - name: Create TWA project
+      - name: Create Android project
         run: |
-          mkdir -p twa/app/src/main/java/placeholder
+          mkdir -p twa/app/src/main/java/com/henaakter/salespipeline
+          mkdir -p twa/app/src/main/res/values
           
           cat > twa/settings.gradle << 'EOF'
-          pluginManagement {
-            repositories { google(); mavenCentral(); gradlePluginPortal() }
-          }
-          dependencyResolutionManagement {
-            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-            repositories { google(); mavenCentral() }
-          }
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
           rootProject.name = "Pipeline"
           include ":app"
           EOF
 
           cat > twa/build.gradle << 'EOF'
-          plugins { id 'com.android.application' version '8.2.0' apply false }
+          plugins { id 'com.android.application' version '8.7.3' apply false }
           EOF
 
           cat > twa/gradle.properties << 'EOF'
@@ -84,27 +75,17 @@ jobs:
                 keyPassword 'pipeline123'
               }
             }
-            buildTypes {
-              release {
-                signingConfig signingConfigs.release
-                minifyEnabled false
-              }
-            }
+            buildTypes { release { signingConfig signingConfigs.release; minifyEnabled false } }
           }
-          dependencies {
-            implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
-          }
+          dependencies { implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0' }
           EOF
 
           cat > twa/app/src/main/AndroidManifest.xml << 'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-            <application android:label="Pipeline">
+            <application android:label="Pipeline" android:theme="@android:style/Theme.Translucent.NoTitleBar">
               <meta-data android:name="asset_statements" android:resource="@string/assetStatements"/>
-              <activity android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
-                android:exported="true"
-                android:theme="@android:style/Theme.Translucent.NoTitleBar">
-                <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL"
-                  android:value="https://henaakter152.github.io/sales-pipeline/"/>
+              <activity android:name="com.google.androidbrowserhelper.trusted.LauncherActivity" android:exported="true">
+                <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="https://henaakter152.github.io/sales-pipeline/"/>
                 <intent-filter>
                   <action android:name="android.intent.action.MAIN"/>
                   <category android:name="android.intent.category.LAUNCHER"/>
@@ -120,28 +101,27 @@ jobs:
           </manifest>
           EOF
 
-          mkdir -p twa/app/src/main/res/values
           cat > twa/app/src/main/res/values/strings.xml << 'EOF'
-          <resources>
-            <string name="assetStatements">[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"https://henaakter152.github.io"}}]</string>
-          </resources>
+          <resources><string name="assetStatements">[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"https://henaakter152.github.io"}}]</string></resources>
           EOF
 
-      - name: Build APK with Gradle
+      - name: Build APK
         working-directory: twa
-        run: gradle assembleRelease --no-daemon
+        run: |
+          gradle wrapper --gradle-version 8.5
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SalesPipeline-APK
+          name: Pipeline-APK
           path: twa/app/build/outputs/apk/release/*.apk
 
-      - name: Create GitHub Release
+      - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: apk-${{ github.run_number }}
-          name: "APK Build #${{ github.run_number }}"
+          tag_name: release-${{ github.run_number }}
+          name: "Release #${{ github.run_number }}"
           files: twa/app/build/outputs/apk/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
