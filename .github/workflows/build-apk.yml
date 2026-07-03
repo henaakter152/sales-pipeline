@@ -16,50 +16,75 @@ jobs:
       
       - name: Setup Android SDK
         run: |
-          mkdir -p $HOME/android-sdk/cmdline-tools
-          cd $HOME/android-sdk/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
-          unzip -qo tools.zip && mv cmdline-tools latest
-          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk --licenses 2>/dev/null
-          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk "platforms;android-34" "build-tools;34.0.0"
+          export ANDROID_HOME=$HOME/android-sdk
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          cd $ANDROID_HOME/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-11076708_latest.zip
+          mv cmdline-tools latest
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses > /dev/null 2>&1
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
 
       - name: Generate Keystore
         run: |
-          keytool -genkey -v -keystore release.keystore -alias pipeline \
+          keytool -genkey -v -keystore release.keystore -alias release \
             -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass pipeline123 -keypass pipeline123 \
-            -dname "CN=SP,OU=D,O=S,L=D,ST=D,C=BD"
+            -storepass android -keypass android \
+            -dname "CN=App,OU=Dev,O=Dev,L=City,ST=State,C=US"
 
-      - name: Create TWA Project
+      - name: Init Gradle Project
         run: |
-          mkdir -p twa/app/src/main/res/values
+          mkdir -p twa
+          cd twa
+          gradle init --type basic --dsl groovy --project-name Pipeline 2>&1 || true
+          ls -la
+
+      - name: Configure Project
+        run: |
+          cd twa
           
-          cat > twa/settings.gradle << 'EOF'
-          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-          rootProject.name = "Pipeline"; include ":app"
-          EOF
+          # settings.gradle
+          echo 'pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+rootProject.name = "Pipeline"
+include ":app"' > settings.gradle
           
-          cat > twa/build.gradle << 'EOF'
-          plugins { id 'com.android.application' version '8.2.0' apply false }
-          EOF
+          # root build.gradle
+          echo 'plugins { id "com.android.application" version "8.2.0" apply false }' > build.gradle
           
-          cat > twa/gradle.properties << 'EOF'
-          android.useAndroidX=true; org.gradle.jvmargs=-Xmx2048m
-          EOF
+          # gradle.properties
+          echo 'android.useAndroidX=true
+org.gradle.jvmargs=-Xmx2048m' > gradle.properties
           
-          cat > twa/app/build.gradle << 'EOF'
-          plugins { id 'com.android.application' }
+          # app module
+          mkdir -p app/src/main/java/com/henaakter/salespipeline
+          mkdir -p app/src/main/res/values
+          
+          cat > app/build.gradle << 'EOF'
+          plugins { id "com.android.application" }
           android {
-            namespace 'com.henaakter.salespipeline'; compileSdk 34
-            defaultConfig { applicationId "com.henaakter.salespipeline"; minSdk 21; targetSdk 34; versionCode 1; versionName "1.0" }
-            signingConfigs { release { storeFile file('../release.keystore'); storePassword 'pipeline123'; keyAlias 'pipeline'; keyPassword 'pipeline123' } }
-            buildTypes { release { signingConfig signingConfigs.release; minifyEnabled false } }
+            namespace "com.henaakter.salespipeline"
+            compileSdk 34
+            defaultConfig {
+              applicationId "com.henaakter.salespipeline"
+              minSdk 21; targetSdk 34
+              versionCode 1; versionName "1.0"
+            }
+            signingConfigs {
+              release {
+                storeFile file("../../release.keystore")
+                storePassword "android"
+                keyAlias "release"
+                keyPassword "android"
+              }
+            }
+            buildTypes { release { signingConfig signingConfigs.release } }
           }
-          dependencies { implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0' }
+          dependencies { implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.5.0" }
           EOF
           
-          cat > twa/app/src/main/AndroidManifest.xml << 'EOF'
+          cat > app/src/main/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
           <application android:label="Sales Pipeline" android:theme="@android:style/Theme.Translucent.NoTitleBar">
@@ -72,29 +97,31 @@ jobs:
           </activity></application></manifest>
           EOF
           
-          cat > twa/app/src/main/res/values/strings.xml << 'EOF'
+          cat > app/src/main/res/values/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?><resources><string name="assetStatements">[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"https://henaakter152.github.io"}}]</string></resources>
           EOF
+          
+          echo "✅ Project configured"
+
+      - name: Gradle Wrapper
+        working-directory: twa
+        run: gradle wrapper --gradle-version 8.5
 
       - name: Build APK
         working-directory: twa
-        env:
-          ANDROID_HOME: /home/runner/android-sdk
-        run: |
-          gradle wrapper --gradle-version 8.5
-          ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SalesPipeline-APK
-          path: twa/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: twa/app/build/outputs/apk/release/app-release.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: apk-v${{ github.run_number }}
           name: "Sales Pipeline APK v${{ github.run_number }}"
-          files: twa/app/build/outputs/apk/release/app-release-unsigned.apk
+          files: twa/app/build/outputs/apk/release/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
